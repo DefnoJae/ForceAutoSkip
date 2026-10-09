@@ -23,20 +23,33 @@ async function flush(){await Promise.resolve();await Promise.resolve();}
  status.currentTime=1291; interval(); assert.equal(seeks.at(-1),90);
  state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'Chapter 1'},{start:90,text:'Chapter 2'}]; status.currentTime=20; now+=2000; interval(); assert.equal(seeks.at(-1),90);
  status.id='stale'; interval(); assert.equal(seeks.length,4);
+ status.id='episode2';
+ for (const label of ['Intro', 'Outro', 'Credits', 'Opening scene', 'Ending scene', 'After credits']) {
+   state.playbackInfo.mkvMetadata.chapters=[{start:0,text:label},{start:90,text:'Story'}];
+   now+=2000; interval(); assert.equal(seeks.length,4, label+' must not skip story content');
+ }
+ state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'OP',end:900},{start:90,text:'Story'}];
+ now+=2000; interval(); assert.equal(seeks.at(-1),90,'chapter boundary caps oversized end');
+ state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'OP'}];
+ now+=2000; interval(); assert.equal(seeks.length,5,'unbounded opening must not skip entire episode');
+ data={op:{interval:{startTime:0,endTime:150}},ed:null};
+ state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'OP'},{start:90,text:'Story'}];
+ now+=6000; interval(); await flush(); now+=2000; interval();
+ assert.equal(seeks.at(-1),90,'file chapters override conflicting player data');
+ console.log('PASS: ambiguous labels ignored, oversized ranges rejected, next boundary respected, file chapters preferred');
  console.log('PASS: exact ranges, retry throttle, confirmed seeks, ending, pause, watch party, episode reset, chapter fallback, post-credit preservation, unlabelled chapters, stale status');
  const manifest = JSON.parse(fs.readFileSync('Manifest.json', 'utf8'));
  assert.equal(manifest.payload, source);
  assert.deepEqual(manifest.plugin.permissions.scopes, ['playback']);
- assert.equal(manifest.version, '1.0.7');
- assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.7/icon.png');
+ assert.equal(manifest.version, '1.0.8');
+ assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.8/icon.png');
  assert.equal(fs.readFileSync('icon-selected.png').subarray(1, 4).toString(), 'PNG');
- assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.7/Manifest.json');
- assert.deepEqual(JSON.parse(fs.readFileSync('releases/v1.0.7/Manifest.json', 'utf8')), manifest);
- assert.deepEqual(fs.readFileSync('releases/v1.0.7/icon.png'), fs.readFileSync('icon-selected.png'));
+ assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.8/Manifest.json');
+ assert.deepEqual(JSON.parse(fs.readFileSync('releases/v1.0.8/Manifest.json', 'utf8')), manifest);
+ assert.deepEqual(fs.readFileSync('releases/v1.0.8/icon.png'), fs.readFileSync('icon-selected.png'));
  console.log('PASS: manifest JSON and embedded source match');
  let permissionMessage = '';
  vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({toast:{error:message=>permissionMessage=message}})}});
  assert.match(permissionMessage, /playback access/);
  console.log('PASS: missing playback API reports actionable error without crashing');
 })();
-

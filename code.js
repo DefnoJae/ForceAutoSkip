@@ -30,33 +30,32 @@ function init() {
 
         function ranges(duration) {
             const result = [];
-            function add(start, end, label) {
+            function add(start, end, label, source) {
                 if (Number.isFinite(start) && Number.isFinite(end) && start >= 0 &&
-                    end > start && end <= duration + 0.5) {
-                    result.push({ start: start, end: Math.min(end, duration), label: label });
+                    end > start && end - start <= 300 && end <= duration + 0.5) {
+                    result.push({ start: start, end: Math.min(end, duration), label: label, source: source });
                 }
             }
-            // Exact OP/ED data takes priority over chapter labels.
-            ["op", "ed"].forEach(function (kind) {
-                const entry = skipData && skipData[kind];
-                if (entry && entry.interval) {
-                    add(entry.interval.startTime, entry.interval.endTime, kind === "op" ? "Opening" : "Ending");
-                }
-            });
+            // Explicit labels from the actual file take priority over external timings.
             const chapters = info && info.mkvMetadata && info.mkvMetadata.chapters;
             const sorted = (chapters || []).slice().sort(function (a, b) { return a.start - b.start; });
             sorted.forEach(function (chapter, index) {
                 const text = (chapter.text || "").trim();
                 let label = null;
-                if (/\bopening\b|^op(?:\s|\d|$)|^intro$/i.test(text)) label = "Opening";
-                if (/\bending\b|^ed(?:\s|\d|$)|^credits\b|^outro$/i.test(text)) label = "Ending";
+                if (/^(?:opening|op)(?:\s*\d+)?(?:\s*[-:：].*)?$/i.test(text)) label = "Opening";
+                if (/^(?:ending|ed)(?:\s*\d+)?(?:\s*[-:：].*)?$/i.test(text)) label = "Ending";
                 if (!label || result.some(function (r) { return r.label === label; })) return;
                 const next = sorted[index + 1];
-                const end = chapter.end > chapter.start ? chapter.end : next ? next.start : duration;
-                // Intro/outro are ambiguous: use them only near their respective ends.
-                if (/^intro$/i.test(text) && (chapter.start > duration / 2 || end - chapter.start > 180)) return;
-                if (/^outro$/i.test(text) && chapter.start < duration / 2) return;
-                add(chapter.start, end, label);
+                const end = chapter.end > chapter.start ? Math.min(chapter.end, next ? next.start : duration) : next ? next.start : duration;
+                add(chapter.start, end, label, "MKV chapter: " + text);
+            });
+            ["op", "ed"].forEach(function (kind) {
+                const label = kind === "op" ? "Opening" : "Ending";
+                if (result.some(function (r) { return r.label === label; })) return;
+                const entry = skipData && skipData[kind];
+                if (entry && entry.interval) {
+                    add(entry.interval.startTime, entry.interval.endTime, label, "player skip data");
+                }
             });
             return result;
         }
@@ -75,6 +74,8 @@ function init() {
             if (pending && pending.end === range.end && now - pending.sent < 1500) return;
             // Retry a seek that the player ignored; do not flood it with commands.
             pending = { end: range.end, sent: now };
+            console.log("[ForceAutoSkip] " + JSON.stringify({ playbackId: info.id, source: range.source,
+                label: range.label, start: range.start, end: range.end, from: time }));
             vc.seekTo(range.end);
             vc.showMessage("Force skipped " + range.label, 1000);
         }
