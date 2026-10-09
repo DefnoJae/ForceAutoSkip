@@ -10,7 +10,7 @@ A Seanime plugin that forces detected opening and ending skips and retries when 
 2. Paste this manifest URL:
 
    ```text
-   https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/Manifest.json
+   https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.7/Manifest.json
    ```
 
 3. Click **Find**, then **Install**. Approve the **playback** permission when Seanime prompts you, then enable **Force OP/ED Skip**. Seanime requires this permission to expose its player API to the plugin.
@@ -23,6 +23,10 @@ Disable the plugin in Extensions to watch OP/ED normally. While enabled, it forc
 ### Updating from 1.0.0
 
 Version 1.0.1 fixes the missing playback permission that caused `Cannot read property 'addEventListener' of undefined or null`. Update the plugin through Extensions and approve the new **playback** permission. If Seanime retains the old manifest, remove the extension and reinstall from the URL above. Restart Seanime if the old plugin is still loaded.
+
+### Stale versions during installation
+
+Seanime's Find action reads the supplied URL, but Install fetches the manifest's own `manifestURI` again. Version 1.0.7 uses a dedicated release URL for both the manifest and icon so these requests cannot fall back to a cached earlier main manifest. Install using the versioned URL above. Future releases use new paths; install the new release URL to upgrade. Keep published release files unchanged.
 
 ## How it works
 
@@ -47,6 +51,6 @@ node test.cjs
 
 Tests cover exact intervals, ignored-seek retries, retry throttling, confirmed seeks, openings/endings, pause handling, watch-party exclusion, episode changes, chapter fallback, post-credit preservation, unlabelled chapters, stale status rejection, and manifest/source consistency.
 
-Edit `code.js`, increment the version in `build.cjs` for releases, and regenerate `Manifest.json` before committing.
+Edit `code.js`, increment `version` in `build.cjs` for releases, and regenerate the manifests before committing. Publish each new `releases/vVERSION` directory and keep previous releases unchanged.
 
 API references: [Seanime plugin API](https://github.com/5rahim/seanime/blob/main/internal/extension_repo/goja_plugin_types/plugin.d.ts), [chapter skip logic](https://github.com/5rahim/seanime/blob/main/seanime-web/src/app/%28main%29/_features/media-core/media-core-chapters.ts), [official plugin examples](https://github.com/5rahim/seanime-extensions).

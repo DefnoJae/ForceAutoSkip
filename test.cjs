@@ -27,10 +27,12 @@ async function flush(){await Promise.resolve();await Promise.resolve();}
  const manifest = JSON.parse(fs.readFileSync('Manifest.json', 'utf8'));
  assert.equal(manifest.payload, source);
  assert.deepEqual(manifest.plugin.permissions.scopes, ['playback']);
- assert.equal(manifest.version, '1.0.6');
- assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/icon-selected.png');
+ assert.equal(manifest.version, '1.0.7');
+ assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.7/icon.png');
  assert.equal(fs.readFileSync('icon-selected.png').subarray(1, 4).toString(), 'PNG');
- assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/Manifest.json');
+ assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.7/Manifest.json');
+ assert.deepEqual(JSON.parse(fs.readFileSync('releases/v1.0.7/Manifest.json', 'utf8')), manifest);
+ assert.deepEqual(fs.readFileSync('releases/v1.0.7/icon.png'), fs.readFileSync('icon-selected.png'));
  console.log('PASS: manifest JSON and embedded source match');
  let permissionMessage = '';
  vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({toast:{error:message=>permissionMessage=message}})}});
