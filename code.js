@@ -2,6 +2,10 @@
 function init() {
     $ui.register(function (ctx) {
         const vc = ctx.videoCore;
+        if (!vc || typeof vc.addEventListener !== "function") {
+            ctx.toast.error("Force OP/ED Skip needs playback access. Update the extension and approve its playback permission in Seanime Extensions.");
+            return;
+        }
         let active = "";
         let info = null;
         let skipData = null;

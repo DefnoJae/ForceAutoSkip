@@ -11,12 +11,16 @@ A Seanime plugin that forces detected opening and ending skips and retries when 
    https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/Manifest.json
    ```
 
-3. Click **Find**, then **Install**. Enable **Force OP/ED Skip** and accept Seanime's plugin permission prompt if shown. This plugin requests no additional permission scopes.
+3. Click **Find**, then **Install**. Approve the **playback** permission when Seanime prompts you, then enable **Force OP/ED Skip**. Seanime requires this permission to expose its player API to the plugin.
 4. Play an episode with OP/ED timing data or labelled MKV chapters. The player displays **Force skipped Opening/Ending** when the plugin seeks.
 
 For manual installation, download `Manifest.json`, rename it to `force-op-ed-skip.json`, place it in the folder configured by `[extensions] dir` in Seanime's `config.toml`, and restart Seanime.
 
 Disable the plugin in Extensions to watch OP/ED normally. While enabled, it forces skips independently of the player's **Skip OP/ED** toggle.
+
+### Updating from 1.0.0
+
+Version 1.0.1 fixes the missing playback permission that caused `Cannot read property 'addEventListener' of undefined or null`. Update the plugin through Extensions and approve the new **playback** permission. If Seanime retains the old manifest, remove the extension and reinstall from the URL above. Restart Seanime if the old plugin is still loaded.
 
 ## How it works
 

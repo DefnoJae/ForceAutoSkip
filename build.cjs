@@ -2,7 +2,7 @@ const fs = require('fs');
 const manifest = {
   id: 'force-op-ed-skip',
   name: 'Force OP/ED Skip',
-  version: '1.0.0',
+  version: '1.0.1',
   manifestURI: 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/Manifest.json',
   language: 'javascript',
   type: 'plugin',
@@ -11,6 +11,6 @@ const manifest = {
   website: 'https://github.com/DefnoJae/ForceAutoSkip',
   lang: 'multi',
   payload: fs.readFileSync('code.js', 'utf8'),
-  plugin: { version: '1', permissions: { scopes: [] } }
+  plugin: { version: '1', permissions: { scopes: ['playback'] } }
 };
 fs.writeFileSync('Manifest.json', JSON.stringify(manifest, null, 2) + '\n');

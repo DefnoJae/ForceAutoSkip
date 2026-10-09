@@ -26,7 +26,13 @@ async function flush(){await Promise.resolve();await Promise.resolve();}
  console.log('PASS: exact ranges, retry throttle, confirmed seeks, ending, pause, watch party, episode reset, chapter fallback, post-credit preservation, unlabelled chapters, stale status');
  const manifest = JSON.parse(fs.readFileSync('Manifest.json', 'utf8'));
  assert.equal(manifest.payload, source);
+ assert.deepEqual(manifest.plugin.permissions.scopes, ['playback']);
+ assert.equal(manifest.version, '1.0.1');
  assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/Manifest.json');
  console.log('PASS: manifest JSON and embedded source match');
+ let permissionMessage = '';
+ vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({toast:{error:message=>permissionMessage=message}})}});
+ assert.match(permissionMessage, /playback access/);
+ console.log('PASS: missing playback API reports actionable error without crashing');
 })();
 
