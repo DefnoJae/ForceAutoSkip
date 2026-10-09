@@ -27,9 +27,9 @@ async function flush(){await Promise.resolve();await Promise.resolve();}
  const manifest = JSON.parse(fs.readFileSync('Manifest.json', 'utf8'));
  assert.equal(manifest.payload, source);
  assert.deepEqual(manifest.plugin.permissions.scopes, ['playback']);
- assert.equal(manifest.version, '1.0.2');
- assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/icon.png');
- assert.equal(fs.readFileSync('icon.png').subarray(1, 4).toString(), 'PNG');
+ assert.equal(manifest.version, '1.0.3');
+ assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/icon-bleach.png');
+ assert.equal(fs.readFileSync('icon-bleach.png').subarray(1, 4).toString(), 'PNG');
  assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/Manifest.json');
  console.log('PASS: manifest JSON and embedded source match');
  let permissionMessage = '';
