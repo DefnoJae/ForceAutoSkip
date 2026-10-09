@@ -1,5 +1,7 @@
 # ForceAutoSkip for Seanime
 
+<img src="icon.png" alt="ForceAutoSkip icon" width="128" height="128">
+
 A Seanime plugin that forces detected opening and ending skips and retries when the player ignores a seek.
 
 ## Install
