@@ -16,6 +16,14 @@ function init() {
         let skipEnabled = false;
         let checking = false;
         let settingClient = "";
+        let waiting = null;
+        let settingsBusy = false;
+
+        function rememberSetting(client, enabled) {
+            skipEnabled = enabled;
+            if (typeof $storage !== "undefined") $storage.set("player-auto-skip:" + client, enabled);
+            if (!enabled) { waiting = null; pending = null; }
+        }
 
         function textOf(element) {
             return (element.outerHTML || "").replace(/<[^>]*>/g, " ")
@@ -48,7 +56,11 @@ function init() {
 
         async function checkPlayerSetting() {
             const client = vc.getCurrentClientId();
-            if (client !== settingClient) { settingClient = client; skipEnabled = false; }
+            if (!client) return;
+            if (client !== settingClient) {
+                settingClient = client;
+                skipEnabled = typeof $storage !== "undefined" && $storage.get("player-auto-skip:" + client) === true;
+            }
             if (!ctx.dom || typeof ctx.dom.query !== "function") { skipEnabled = false; return; }
             try {
                 const rows = await withTimeout(ctx.dom.query(
@@ -57,7 +69,7 @@ function init() {
                     { withOuterHTML: true }));
                 if (client !== vc.getCurrentClientId()) { skipEnabled = false; return; }
                 const setting = readSettingSnapshot(rows);
-                if (setting !== null) skipEnabled = setting;
+                if (setting !== null) rememberSetting(client, setting);
             } catch (_) { skipEnabled = false; }
             if (!skipEnabled) pending = null;
         }
@@ -67,8 +79,14 @@ function init() {
             checking = true;
             try {
                 refresh();
-                await checkPlayerSetting();
-                check(vc.getPlaybackStatus());
+                const client = vc.getCurrentClientId();
+                if (client && client !== settingClient) {
+                    settingClient = client;
+                    skipEnabled = typeof $storage !== "undefined" && $storage.get("player-auto-skip:" + client) === true;
+                }
+                if (typeof vc.pullStatus !== "function") return;
+                const status = await withTimeout(vc.pullStatus());
+                check(status);
             } catch (error) {
                 skipEnabled = false;
                 console.log("[ForceAutoSkip] settings check failed: " + String(error));
@@ -84,6 +102,7 @@ function init() {
                 generation++;
                 skipData = null;
                 pending = null;
+                waiting = null;
                 lastFetch = 0;
             }
             info = next || null;
@@ -125,14 +144,25 @@ function init() {
             sync();
             if (!skipEnabled || !active || !info || info.isNakamaWatchParty || !status || status.paused ||
                 status.id !== info.id || status.clientId !== vc.getCurrentClientId() ||
-                !Number.isFinite(status.duration) || status.duration <= 1) return;
+                !Number.isFinite(status.duration) || status.duration <= 1) { waiting = null; return; }
             const time = status.currentTime;
             if (!Number.isFinite(time)) return;
             if (pending && time >= pending.end - 0.05) pending = null;
             const range = ranges(status.duration).find(function (r) { return time >= r.start && time < r.end - 0.05; });
-            if (!range) return;
+            if (!range) { waiting = null; return; }
             const now = Date.now();
-            if (pending && pending.end === range.end && now - pending.sent < 1500) return;
+            const key = range.start + ":" + range.end + ":" + range.label;
+            if (!waiting || waiting.key !== key || time < waiting.lastTime - 0.5) {
+                waiting = { key: key, since: now, firstTime: time, lastTime: time };
+                return;
+            }
+            if (time === waiting.lastTime) {
+                if (!pending) { waiting.since = now; waiting.firstTime = time; }
+                return;
+            }
+            waiting.lastTime = time;
+            if (now - waiting.since < 2000 || time <= waiting.firstTime) return;
+            if (pending && pending.end === range.end && now - pending.sent < 2000) return;
             // Retry a seek that the player ignored; do not flood it with commands.
             pending = { end: range.end, sent: now };
             console.log("[ForceAutoSkip] " + JSON.stringify({ playbackId: info.id, source: range.source,
@@ -161,9 +191,17 @@ function init() {
         }
 
         vc.addEventListener("video-status", function () { tick(); });
+        vc.addEventListener("video-seeked", function () { waiting = null; pending = null; });
         vc.addEventListener("video-loaded", function () { sync(); refresh(); });
         vc.addEventListener("video-playback-state", function () { sync(); refresh(); });
         ctx.setInterval(tick, 500);
+        function pollSetting() {
+            if (settingsBusy) return;
+            settingsBusy = true;
+            return checkPlayerSetting().finally(function () { settingsBusy = false; });
+        }
+        ctx.setInterval(pollSetting, 500);
+        pollSetting();
         refresh();
     });
 }

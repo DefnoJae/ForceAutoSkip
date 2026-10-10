@@ -1,5 +1,5 @@
 const fs = require('fs');
-const version = '1.0.10';
+const version = '1.0.11';
 const releasePath = 'releases/v' + version;
 const releaseURL = 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/' + releasePath;
 const manifest = {
@@ -15,7 +15,7 @@ const manifest = {
   icon: 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/icon.png',
   lang: 'multi',
   payload: fs.readFileSync('code.js', 'utf8'),
-  plugin: { version: '1', permissions: { scopes: ['playback'] } }
+  plugin: { version: '1', permissions: { scopes: ['playback', 'storage'] } }
 };
 fs.writeFileSync('Manifest.json', JSON.stringify(manifest, null, 2) + '\n');
 fs.writeFileSync('latest.json', JSON.stringify(manifest, null, 2) + '\n');

@@ -13,12 +13,12 @@ A Seanime plugin that forces detected opening and ending skips and retries when 
    https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/Manifest.json
    ```
 
-3. Click **Find**, then **Install**. Approve the **playback** permission when Seanime prompts you, then enable **Force OP/ED Skip**. Seanime requires this permission to expose its player API to the plugin.
+3. Click **Find**, then **Install**. Approve **playback** and **storage** when prompted, then enable **Force OP/ED Skip**. Playback exposes the player API; storage remembers the confirmed Skip OP/ED preference for each player client.
 4. Play an episode with OP/ED timing data or labelled MKV chapters. The player displays **Force skipped Opening/Ending** when the plugin seeks.
 
 For manual installation, download `Manifest.json`, rename it to `force-op-ed-skip.json`, place it in the folder configured by `[extensions] dir` in Seanime's `config.toml`, and restart Seanime.
 
-The extension respects the player's **Skip OP/ED** toggle. After enabling or restarting it, open the player settings menu once so it can read the setting. Turning On or Off in the submenu is also recognised directly; closing the submenu keeps that value. Seanime does not expose this preference through its plugin API, so the extension reads one snapshot of the visible menu. Until a value can be confirmed, it stays inactive.
+The extension respects the player's **Skip OP/ED** toggle. On initial setup, open player settings once to confirm the toggle. Version 1.0.11 remembers that value across episodes and extension/app restarts for the same player client, so subsequent skips do not need screen interaction. Turning On or Off in the submenu updates the saved value. Seanime does not expose this preference through its plugin API; on a new player client or with no saved value, it must observe the menu once and stays inactive until then.
 
 ### Updating from 1.0.0
 
@@ -30,11 +30,13 @@ Use **Check for updates** in Seanime. Version 1.0.10 restores a stable `releases
 
 Version 1.0.10 also fixes two bugs in 1.0.9: opening the Skip OP/ED submenu incorrectly disabled the plugin, and individual menu text reads could hang when elements disappeared. One menu snapshot now includes the selected On/Off option, and a two-second timeout lets polling recover after an unanswered query.
 
+Version 1.0.11 adds an independent playback watchdog using `pullStatus`, rather than relying on cached status or menu interaction. When enabled playback remains in a detected OP/ED range and continues advancing for at least two seconds, it forces a seek to the range end. A successful native skip cancels the fallback; pause, leaving the range, episode changes, and manual seeks reset the grace period. Ignored force seeks are retried no more often than every two seconds. Menu reads run separately so an unanswered settings request cannot hold up the playback watchdog.
+
 ## How it works
 
 - Prefers explicitly labelled OP/ED chapters from the actual file. Falls back to player OP/ED timing data, refreshed every five seconds. External timing data can still be incorrect for a particular release.
 - Only recognises explicit Opening/OP and Ending/ED labels (including numbered labels and titles following a colon or dash). Generic Intro, Outro, Credits, and story scene labels are ignored. Skips longer than five minutes are rejected, and chapter ends are capped at the next chapter boundary.
-- Checks status events and polls every 500 ms. Retries an ignored seek after 1.5 seconds.
+- Requests fresh playback status every 500 ms. Gives the normal skip two seconds before forcing, then retries ignored seeks at two-second intervals.
 - Seeks to the ending's end, preserving following post-credit scenes. Does not request the next episode itself.
 - Leaves paused playback and Nakama watch parties alone.
 
@@ -53,7 +55,7 @@ node build.cjs
 node test.cjs
 ```
 
-Tests cover exact intervals, ignored-seek retries, retry throttling, confirmed seeks, openings/endings, pause handling, watch-party exclusion, episode changes, chapter fallback, post-credit preservation, unlabelled chapters, stale status rejection, menu and submenu On/Off, closing the submenu, unanswered query recovery, and update discovery through every legacy manifest URL. Menu tests use HTML fixtures matching Seanime's actual menu components, with no follow-up element reads.
+Tests cover two-second grace timing, fresh status pulls with deliberately stale cached status, skipping without input events or a visible menu, successful native skip cancellation, ignored-seek retries, saved On/Off across restarts, pause and buffering, episode changes, endings, blocked menu query isolation, chapter bounds and ambiguous labels, watch parties, stale status, and every legacy update URL. Menu fixtures match Seanime's actual components.
 
 Edit `code.js`, increment `version` in `build.cjs`, then rebuild and run tests. Commit `latest.json`, `Manifest.json`, and the generated release directories. Legacy release manifest paths are compatibility update endpoints; they must keep advertising the latest version.
 

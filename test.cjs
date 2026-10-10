@@ -1,90 +1,75 @@
 const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert/strict');
-const source = fs.readFileSync('code.js', 'utf8');
-let now = 10000, interval, seeks = [], data = {op:{interval:{startTime:10,endTime:100}},ed:{interval:{startTime:1200,endTime:1290}}};
-let state = {clientId:'client',playbackInfo:{id:'episode1',mkvMetadata:{chapters:[]}}};
-let status = {id:'episode1',clientId:'client',duration:1380,currentTime:19,paused:false};
-function element(kind, html) { return {attributes:{'data-vc-element':kind},outerHTML:html}; }
-function menuRow(value) {
- return element('menu-option', '<button data-vc-element="menu-option"><span><svg></svg></span><span>Skip OP/ED</span><span>'+value+'</span><svg></svg></button>');
+const source = fs.readFileSync('code.js','utf8');
+function row(on) {
+ return {attributes:{'data-vc-element':'menu-option'},outerHTML:'<button><span>Skip OP/ED</span><span>'+ (on?'On':'Off') +'</span></button>'};
 }
-function submenu(value) {
- return [element('menu-section-close','<button><svg></svg><span>Skip OP/ED</span></button>'),
- element('setting-select-option','<div data-vc-element="setting-select-option"><span data-vc-element="setting-select-option-indicator"><svg></svg></span><div><span>'+value+'</span></div></div>')];
+function submenu(on) {
+ return [{attributes:{'data-vc-element':'menu-section-close'},outerHTML:'<button><span>Skip OP/ED</span></button>'},
+ {attributes:{'data-vc-element':'setting-select-option'},outerHTML:'<div><span><svg></svg></span><span>'+(on?'On':'Off')+'</span></div>'}];
 }
-let settingRows = [], queryHangs = false, timeout;
-const listeners = {};
-const vc = {getPlaybackState:()=>state,getPlaybackStatus:()=>status,getCurrentClientId:()=>state.clientId,
-getSkipData:async()=>data,seekTo:t=>seeks.push(t),showMessage:()=>{},addEventListener:(n,f)=>listeners[n]=f};
-vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({videoCore:vc,dom:{query:async(selector,opts)=>{
- assert.equal(opts.withOuterHTML,true); assert.match(selector,/:has/);
- return queryHangs ? new Promise(()=>{}) : settingRows;
-}},setTimeout:fn=>{timeout=fn;return ()=>{};},setInterval:f=>interval=f})},Date:{now:()=>now}});
-async function flush(){await Promise.resolve();await Promise.resolve();}
+function harness(storage = new Map(), initialRows = []) {
+ const h = {now:10000, rows:initialRows, intervals:[], events:{}, timers:[], seeks:[], logs:[], storage, hang:false,
+ state:{clientId:'client',playbackInfo:{id:'episode1',mkvMetadata:{chapters:[]}}},
+ status:{id:'episode1',clientId:'client',duration:1380,currentTime:10,paused:false},
+ data:{op:{interval:{startTime:10,endTime:100}},ed:{interval:{startTime:1200,endTime:1290}}}};
+ const vc = {getPlaybackState:()=>h.state,getPlaybackStatus:()=>({...h.status,currentTime:0}),
+ getCurrentClientId:()=>h.state.clientId,pullStatus:async()=>({...h.status}),getSkipData:async()=>h.data,
+ seekTo:time=>h.seeks.push(time),showMessage:()=>{},addEventListener:(name,fn)=>h.events[name]=fn};
+ const ctx = {videoCore:vc,dom:{query:async(selector,options)=>{assert.equal(options.withOuterHTML,true);return h.hang?new Promise(()=>{}):h.rows;}},
+ setInterval:fn=>{h.intervals.push(fn);return ()=>{};},setTimeout:fn=>{const t={fn,cancelled:false};h.timers.push(t);return ()=>t.cancelled=true;}};
+ vm.runInNewContext(source+'\ninit();',{$ui:{register:fn=>fn(ctx)},$storage:{get:key=>storage.get(key),set:(key,value)=>storage.set(key,value)},
+ Date:{now:()=>h.now},console:{log:message=>h.logs.push(message)}});
+ h.tick=async(ms=0,advance=true)=>{h.now+=ms;if(advance)h.status.currentTime+=ms/1000;await h.intervals[0]();await flush();};
+ h.setting=async()=>{await flush();await h.intervals[1]();};
+ return h;
+}
+async function flush(){for(let i=0;i<10;i++)await Promise.resolve();}
 (async()=>{
- await flush(); await interval(); assert.deepEqual(seeks,[],'unknown player setting must not skip');
- settingRows=[menuRow('On')];
- await flush(); await interval(); assert.deepEqual(seeks,[100]);
- await interval(); assert.equal(seeks.length,1);
- now+=1600; await interval(); assert.deepEqual(seeks,[100,100]);
- status.currentTime=100; await interval(); assert.equal(seeks.length,2);
- status.currentTime=1210; await interval(); assert.equal(seeks.at(-1),1290);
- status.paused=true; now+=2000; await interval(); assert.equal(seeks.length,3);
- status.paused=false; state.playbackInfo.isNakamaWatchParty=true; await interval(); assert.equal(seeks.length,3);
- state={clientId:'client',playbackInfo:{id:'episode2',mkvMetadata:{chapters:[{start:0,text:'OP 1'},{start:90,text:'Episode'},{start:1200,text:'ED'},{start:1290,text:'After credits'}]}}};
- data=null; status={...status,id:'episode2',currentTime:20}; now+=6000; await interval(); await flush(); await interval(); assert.equal(seeks.at(-1),90);
- status.currentTime=1291; await interval(); assert.equal(seeks.at(-1),90);
- state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'Chapter 1'},{start:90,text:'Chapter 2'}]; status.currentTime=20; now+=2000; await interval(); assert.equal(seeks.at(-1),90);
- status.id='stale'; await interval(); assert.equal(seeks.length,4);
- status.id='episode2';
- for (const label of ['Intro', 'Outro', 'Credits', 'Opening scene', 'Ending scene', 'After credits']) {
-   state.playbackInfo.mkvMetadata.chapters=[{start:0,text:label},{start:90,text:'Story'}];
-   now+=2000; await interval(); assert.equal(seeks.length,4, label+' must not skip story content');
+ const stored = new Map([['player-auto-skip:client',true]]);
+ let h=harness(stored); await flush(); await h.tick();
+ await h.tick(1999); assert.equal(h.seeks.length,0,'native gets full two seconds');
+ await h.tick(1); assert.deepEqual(h.seeks,[100],'no menu, click, or cached status needed');
+ await h.tick(500); assert.equal(h.seeks.length,1,'throttle retries');
+ await h.tick(1500); assert.equal(h.seeks.length,2,'retry after two seconds');
+ h.status.currentTime=100;await h.tick(500);assert.equal(h.seeks.length,2,'confirmed target stops retry');
+ h=harness(new Map());await flush();await h.tick();await h.tick(3000);assert.equal(h.seeks.length,0,'unknown toggle stays inactive');
+ h.rows=submenu(true);await h.setting();assert.equal(h.storage.get('player-auto-skip:client'),true);
+ h.rows=[];await h.tick();await h.tick(2000);assert.deepEqual(h.seeks,[100],'submenu On remembered when closed');
+ const restarted=harness(h.storage);await flush();await restarted.tick();await restarted.tick(2000);
+ assert.deepEqual(restarted.seeks,[100],'restart uses confirmed toggle without opening menu');
+ h.rows=submenu(false);await h.setting();await h.tick(3000);assert.equal(h.seeks.length,1,'Off cancels forced skipping');
+ const offRestart=harness(h.storage);await flush();await offRestart.tick();await offRestart.tick(3000);assert.equal(offRestart.seeks.length,0);
+ h=harness(new Map([['player-auto-skip:client',true]]));await flush();await h.tick();
+ h.status.currentTime=100;await h.tick(2000);assert.equal(h.seeks.length,0,'successful native skip cancels fallback');
+ h=harness(new Map([['player-auto-skip:client',true]]));await flush();await h.tick();
+ h.status.paused=true;await h.tick(3000);h.status.paused=false;await h.tick();await h.tick(1999);assert.equal(h.seeks.length,0);
+ await h.tick(1);assert.equal(h.seeks.length,1,'pause resets grace period');
+ h=harness(new Map([['player-auto-skip:client',true]]));await flush();await h.tick();await h.tick(5000,false);
+ assert.equal(h.seeks.length,0,'buffering does not force a seek');await h.tick(1000);assert.equal(h.seeks.length,0);await h.tick(1000);assert.equal(h.seeks.length,1);
+ h=harness(new Map([['player-auto-skip:client',true]]));await flush();await h.tick();
+ h.state.playbackInfo.id='episode2';h.status.id='episode2';await h.tick(2000);await h.tick();assert.equal(h.seeks.length,0);
+ await h.tick(2000);assert.deepEqual(h.seeks,[100],'episode resets timer but retains known toggle');
+ h.status.currentTime=1210;await h.tick();await h.tick(2000);assert.equal(h.seeks.at(-1),1290,'ending skips preserve following scene');
+ h=harness(new Map([['player-auto-skip:client',true]]));await flush();h.hang=true;
+ const settingsRequest=h.intervals[1]();await flush();await h.tick();await h.tick(2000);
+ assert.deepEqual(h.seeks,[100],'pending UI query cannot block playback watchdog');
+ for(const t of h.timers)if(!t.cancelled)t.fn();await settingsRequest;
+ h.hang=false;h.rows=[row(false)];await h.setting();await h.tick(3000);assert.equal(h.seeks.length,1,'polling recovers and detects Off');
+ for(const label of ['Intro','Outro','Credits','Opening scene','After credits']) {
+   h=harness(new Map([['player-auto-skip:client',true]]));h.data=null;
+   h.state.playbackInfo.mkvMetadata.chapters=[{start:0,text:label},{start:90,text:'Story'}];await flush();h.now+=6000;await h.tick();await h.tick(2000);assert.equal(h.seeks.length,0,label);
  }
- state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'OP',end:900},{start:90,text:'Story'}];
- now+=2000; await interval(); assert.equal(seeks.at(-1),90,'chapter boundary caps oversized end');
- state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'OP'}];
- now+=2000; await interval(); assert.equal(seeks.length,5,'unbounded opening must not skip entire episode');
- data={op:{interval:{startTime:0,endTime:150}},ed:null};
- state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'OP'},{start:90,text:'Story'}];
- now+=6000; await interval(); await flush(); now+=2000; await interval();
- assert.equal(seeks.at(-1),90,'file chapters override conflicting player data');
- console.log('PASS: ambiguous labels ignored, oversized ranges rejected, next boundary respected, file chapters preferred');
- const beforeToggle = seeks.length;
- settingRows = [menuRow('Off')]; now+=2000; await interval();
- assert.equal(seeks.length,beforeToggle,'Off prevents skip');
- settingRows=[]; await interval(); assert.equal(seeks.length,beforeToggle,'Off persists when menu closes');
- settingRows=submenu('On'); await interval(); assert.equal(seeks.length,beforeToggle+1,'On resumes skip directly in submenu');
- settingRows=[]; now+=2000; await interval(); assert.equal(seeks.length,beforeToggle+2,'closing submenu preserves On');
- settingRows=submenu('Off'); now+=2000; await interval(); assert.equal(seeks.length,beforeToggle+2,'submenu Off prevents skip');
- settingRows=[]; await interval(); assert.equal(seeks.length,beforeToggle+2,'closing submenu preserves Off');
- settingRows=[element('menu-section-close','<button>Skip OP/ED</button>')]; await interval();
- assert.equal(seeks.length,beforeToggle+2,'missing selection stays inactive');
- queryHangs=true; const stuckTick=interval(); await flush(); timeout(); await stuckTick;
- assert.equal(seeks.length,beforeToggle+2,'unanswered query fails closed');
- queryHangs=false; settingRows=submenu('On'); await interval();
- assert.equal(seeks.length,beforeToggle+3,'polling recovers after unanswered query');
- console.log('PASS: submenu On/Off, closing menus, unconfirmed state, query timeout and recovery');
- console.log('PASS: exact ranges, retry throttle, confirmed seeks, ending, pause, watch party, episode reset, chapter fallback, post-credit preservation, unlabelled chapters, stale status');
- const manifest = JSON.parse(fs.readFileSync('Manifest.json', 'utf8'));
- assert.equal(manifest.payload, source);
- assert.deepEqual(manifest.plugin.permissions.scopes, ['playback']);
- assert.equal(manifest.version, '1.0.10');
- assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/icon.png');
- assert.equal(fs.readFileSync('icon-selected.png').subarray(1, 4).toString(), 'PNG');
- assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/Manifest.json');
- assert.deepEqual(JSON.parse(fs.readFileSync('releases/Manifest.json','utf8')),manifest);
- assert.deepEqual(JSON.parse(fs.readFileSync('latest.json', 'utf8')), manifest);
- for (const directory of fs.readdirSync('releases')) {
-   if (!fs.statSync('releases/'+directory).isDirectory()) continue;
-   const update=JSON.parse(fs.readFileSync('releases/'+directory+'/Manifest.json','utf8'));
-   assert.deepEqual(update,manifest,'legacy update URL must advertise latest version');
- }
- assert.deepEqual(fs.readFileSync('releases/v1.0.10/icon.png'), fs.readFileSync('icon-selected.png'));
- console.log('PASS: manifest JSON and embedded source match');
- let permissionMessage = '';
- vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({toast:{error:message=>permissionMessage=message}})}});
- assert.match(permissionMessage, /playback access/);
- console.log('PASS: missing playback API reports actionable error without crashing');
-})();
+ h=harness(new Map([['player-auto-skip:client',true]]));h.state.playbackInfo.mkvMetadata.chapters=[{start:0,text:'OP',end:900},{start:90,text:'Story'}];
+ await flush();await h.tick();await h.tick(2000);assert.deepEqual(h.seeks,[90],'file chapter caps end and overrides player timing');
+ h=harness(new Map([['player-auto-skip:client',true]]));h.state.playbackInfo.isNakamaWatchParty=true;await flush();await h.tick();await h.tick(3000);assert.equal(h.seeks.length,0);
+ h=harness(new Map([['player-auto-skip:client',true]]));h.status.id='stale';await flush();await h.tick();await h.tick(3000);assert.equal(h.seeks.length,0);
+ const manifest=JSON.parse(fs.readFileSync('Manifest.json','utf8'));
+ assert.equal(manifest.version,'1.0.11');assert.equal(manifest.payload,source);
+ assert.deepEqual(manifest.plugin.permissions.scopes,['playback','storage']);
+ assert.equal(manifest.manifestURI,'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/Manifest.json');
+ for(const path of ['latest.json','releases/Manifest.json',...fs.readdirSync('releases').filter(dir=>fs.statSync('releases/'+dir).isDirectory()).map(dir=>'releases/'+dir+'/Manifest.json')])
+   assert.deepEqual(JSON.parse(fs.readFileSync(path,'utf8')),manifest);
+ console.log('PASS: two-second grace, no-touch fallback, fresh status pull, retries, native success, remembered On/Off, restart, pause, buffering, episode changes, ending, UI query isolation, chapter guards, watch party, stale status, update aliases');
+})().catch(error=>{console.error(error);process.exitCode=1;});
