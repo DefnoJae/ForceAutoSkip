@@ -13,7 +13,7 @@ function submenu(value) {
  return [element('menu-section-close','<button><svg></svg><span>Skip OP/ED</span></button>'),
  element('setting-select-option','<div data-vc-element="setting-select-option"><span data-vc-element="setting-select-option-indicator"><svg></svg></span><div><span>'+value+'</span></div></div>')];
 }
-let settingRows = [menuRow('On')], queryHangs = false, timeout;
+let settingRows = [], queryHangs = false, timeout;
 const listeners = {};
 const vc = {getPlaybackState:()=>state,getPlaybackStatus:()=>status,getCurrentClientId:()=>state.clientId,
 getSkipData:async()=>data,seekTo:t=>seeks.push(t),showMessage:()=>{},addEventListener:(n,f)=>listeners[n]=f};
@@ -23,6 +23,8 @@ vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({videoCore:vc,dom:{qu
 }},setTimeout:fn=>{timeout=fn;return ()=>{};},setInterval:f=>interval=f})},Date:{now:()=>now}});
 async function flush(){await Promise.resolve();await Promise.resolve();}
 (async()=>{
+ await flush(); await interval(); assert.deepEqual(seeks,[],'unknown player setting must not skip');
+ settingRows=[menuRow('On')];
  await flush(); await interval(); assert.deepEqual(seeks,[100]);
  await interval(); assert.equal(seeks.length,1);
  now+=1600; await interval(); assert.deepEqual(seeks,[100,100]);
