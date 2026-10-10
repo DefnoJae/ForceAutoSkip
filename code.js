@@ -17,23 +17,47 @@ function init() {
         let checking = false;
         let settingClient = "";
 
+        function textOf(element) {
+            return (element.outerHTML || "").replace(/<[^>]*>/g, " ")
+                .replace(/&nbsp;|&#160;/g, " ").replace(/\s+/g, " ").trim();
+        }
+
+        function readSettingSnapshot(elements) {
+            const row = elements.find(function (element) {
+                return element.attributes["data-vc-element"] === "menu-option" &&
+                    /^Skip OP\/ED\s*(On|Off)$/.test(textOf(element));
+            });
+            if (row) return /\bOn$/.test(textOf(row));
+            const heading = elements.find(function (element) {
+                return element.attributes["data-vc-element"] === "menu-section-close" && textOf(element) === "Skip OP/ED";
+            });
+            if (!heading) return null;
+            const selected = elements.filter(function (element) {
+                return element.attributes["data-vc-element"] === "setting-select-option";
+            });
+            if (selected.length !== 1) return false;
+            return textOf(selected[0]) === "On";
+        }
+
+        function withTimeout(promise) {
+            return new Promise(function (resolve, reject) {
+                const cancel = ctx.setTimeout(function () { reject(new Error("Player settings query timed out")); }, 2000);
+                promise.then(function (value) { cancel(); resolve(value); }, function (error) { cancel(); reject(error); });
+            });
+        }
+
         async function checkPlayerSetting() {
             const client = vc.getCurrentClientId();
             if (client !== settingClient) { settingClient = client; skipEnabled = false; }
             if (!ctx.dom || typeof ctx.dom.query !== "function") { skipEnabled = false; return; }
             try {
-                const rows = await ctx.dom.query('[data-vc-element="menu-option"]');
-                const texts = await Promise.all(rows.map(function (element) { return element.getText(); }));
-                const row = texts.find(function (text) {
-                    return /^\s*Skip OP\/ED\s*(On|Off)\s*$/.test(text || "");
-                });
+                const rows = await withTimeout(ctx.dom.query(
+                    '[data-vc-element="menu-option"], [data-vc-element="menu-section-close"], ' +
+                    '[data-vc-element="setting-select-option"]:has([data-vc-element="setting-select-option-indicator"] svg)',
+                    { withOuterHTML: true }));
                 if (client !== vc.getCurrentClientId()) { skipEnabled = false; return; }
-                if (row) {
-                    skipEnabled = /\bOn\s*$/.test(row);
-                } else {
-                    const editing = await ctx.dom.query('[data-vc-element="menu-submenu-body"], [data-vc-element="menu-sub-submenu-body"]');
-                    if (editing.length) skipEnabled = false;
-                }
+                const setting = readSettingSnapshot(rows);
+                if (setting !== null) skipEnabled = setting;
             } catch (_) { skipEnabled = false; }
             if (!skipEnabled) pending = null;
         }
@@ -42,9 +66,12 @@ function init() {
             if (checking) return;
             checking = true;
             try {
+                refresh();
                 await checkPlayerSetting();
                 check(vc.getPlaybackStatus());
-                refresh();
+            } catch (error) {
+                skipEnabled = false;
+                console.log("[ForceAutoSkip] settings check failed: " + String(error));
             } finally { checking = false; }
         }
 

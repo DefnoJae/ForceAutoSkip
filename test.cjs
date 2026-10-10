@@ -5,11 +5,22 @@ const source = fs.readFileSync('code.js', 'utf8');
 let now = 10000, interval, seeks = [], data = {op:{interval:{startTime:10,endTime:100}},ed:{interval:{startTime:1200,endTime:1290}}};
 let state = {clientId:'client',playbackInfo:{id:'episode1',mkvMetadata:{chapters:[]}}};
 let status = {id:'episode1',clientId:'client',duration:1380,currentTime:19,paused:false};
-let settingRows = [{getText:async()=> 'Skip OP/ED On'}], editingRows = [];
+function element(kind, html) { return {attributes:{'data-vc-element':kind},outerHTML:html}; }
+function menuRow(value) {
+ return element('menu-option', '<button data-vc-element="menu-option"><span><svg></svg></span><span>Skip OP/ED</span><span>'+value+'</span><svg></svg></button>');
+}
+function submenu(value) {
+ return [element('menu-section-close','<button><svg></svg><span>Skip OP/ED</span></button>'),
+ element('setting-select-option','<div data-vc-element="setting-select-option"><span data-vc-element="setting-select-option-indicator"><svg></svg></span><div><span>'+value+'</span></div></div>')];
+}
+let settingRows = [menuRow('On')], queryHangs = false, timeout;
 const listeners = {};
 const vc = {getPlaybackState:()=>state,getPlaybackStatus:()=>status,getCurrentClientId:()=>state.clientId,
 getSkipData:async()=>data,seekTo:t=>seeks.push(t),showMessage:()=>{},addEventListener:(n,f)=>listeners[n]=f};
-vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({videoCore:vc,dom:{query:async selector=>selector.includes('menu-option')?settingRows:editingRows},setInterval:f=>interval=f})},Date:{now:()=>now}});
+vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({videoCore:vc,dom:{query:async(selector,opts)=>{
+ assert.equal(opts.withOuterHTML,true); assert.match(selector,/:has/);
+ return queryHangs ? new Promise(()=>{}) : settingRows;
+}},setTimeout:fn=>{timeout=fn;return ()=>{};},setInterval:f=>interval=f})},Date:{now:()=>now}});
 async function flush(){await Promise.resolve();await Promise.resolve();}
 (async()=>{
  await flush(); await interval(); assert.deepEqual(seeks,[100]);
@@ -39,24 +50,36 @@ async function flush(){await Promise.resolve();await Promise.resolve();}
  assert.equal(seeks.at(-1),90,'file chapters override conflicting player data');
  console.log('PASS: ambiguous labels ignored, oversized ranges rejected, next boundary respected, file chapters preferred');
  const beforeToggle = seeks.length;
- settingRows = [{getText:async()=>'Skip OP/ED Off'}]; now+=2000; await interval();
+ settingRows = [menuRow('Off')]; now+=2000; await interval();
  assert.equal(seeks.length,beforeToggle,'Off prevents skip');
  settingRows=[]; await interval(); assert.equal(seeks.length,beforeToggle,'Off persists when menu closes');
- settingRows=[{getText:async()=>'Skip OP/ED On'}]; await interval(); assert.equal(seeks.length,beforeToggle+1,'On resumes skip');
- settingRows=[]; editingRows=[{}]; now+=2000; await interval();
- assert.equal(seeks.length,beforeToggle+1,'editing suspends skip');
- editingRows=[]; await interval(); assert.equal(seeks.length,beforeToggle+1,'unconfirmed state stays inactive');
- console.log('PASS: player Off, menu closed after Off, On, editing, unconfirmed state');
+ settingRows=submenu('On'); await interval(); assert.equal(seeks.length,beforeToggle+1,'On resumes skip directly in submenu');
+ settingRows=[]; now+=2000; await interval(); assert.equal(seeks.length,beforeToggle+2,'closing submenu preserves On');
+ settingRows=submenu('Off'); now+=2000; await interval(); assert.equal(seeks.length,beforeToggle+2,'submenu Off prevents skip');
+ settingRows=[]; await interval(); assert.equal(seeks.length,beforeToggle+2,'closing submenu preserves Off');
+ settingRows=[element('menu-section-close','<button>Skip OP/ED</button>')]; await interval();
+ assert.equal(seeks.length,beforeToggle+2,'missing selection stays inactive');
+ queryHangs=true; const stuckTick=interval(); await flush(); timeout(); await stuckTick;
+ assert.equal(seeks.length,beforeToggle+2,'unanswered query fails closed');
+ queryHangs=false; settingRows=submenu('On'); await interval();
+ assert.equal(seeks.length,beforeToggle+3,'polling recovers after unanswered query');
+ console.log('PASS: submenu On/Off, closing menus, unconfirmed state, query timeout and recovery');
  console.log('PASS: exact ranges, retry throttle, confirmed seeks, ending, pause, watch party, episode reset, chapter fallback, post-credit preservation, unlabelled chapters, stale status');
  const manifest = JSON.parse(fs.readFileSync('Manifest.json', 'utf8'));
  assert.equal(manifest.payload, source);
  assert.deepEqual(manifest.plugin.permissions.scopes, ['playback']);
- assert.equal(manifest.version, '1.0.9');
- assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.9/icon.png');
+ assert.equal(manifest.version, '1.0.10');
+ assert.equal(manifest.icon, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/icon.png');
  assert.equal(fs.readFileSync('icon-selected.png').subarray(1, 4).toString(), 'PNG');
- assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/v1.0.9/Manifest.json');
- assert.deepEqual(JSON.parse(fs.readFileSync('releases/v1.0.9/Manifest.json', 'utf8')), manifest);
- assert.deepEqual(fs.readFileSync('releases/v1.0.9/icon.png'), fs.readFileSync('icon-selected.png'));
+ assert.equal(manifest.manifestURI, 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/Manifest.json');
+ assert.deepEqual(JSON.parse(fs.readFileSync('releases/Manifest.json','utf8')),manifest);
+ assert.deepEqual(JSON.parse(fs.readFileSync('latest.json', 'utf8')), manifest);
+ for (const directory of fs.readdirSync('releases')) {
+   if (!fs.statSync('releases/'+directory).isDirectory()) continue;
+   const update=JSON.parse(fs.readFileSync('releases/'+directory+'/Manifest.json','utf8'));
+   assert.deepEqual(update,manifest,'legacy update URL must advertise latest version');
+ }
+ assert.deepEqual(fs.readFileSync('releases/v1.0.10/icon.png'), fs.readFileSync('icon-selected.png'));
  console.log('PASS: manifest JSON and embedded source match');
  let permissionMessage = '';
  vm.runInNewContext(source+'\ninit();', {$ui:{register:f=>f({toast:{error:message=>permissionMessage=message}})}});
