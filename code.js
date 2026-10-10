@@ -13,6 +13,40 @@ function init() {
         let busy = false;
         let lastFetch = 0;
         let pending = null;
+        let skipEnabled = false;
+        let checking = false;
+        let settingClient = "";
+
+        async function checkPlayerSetting() {
+            const client = vc.getCurrentClientId();
+            if (client !== settingClient) { settingClient = client; skipEnabled = false; }
+            if (!ctx.dom || typeof ctx.dom.query !== "function") { skipEnabled = false; return; }
+            try {
+                const rows = await ctx.dom.query('[data-vc-element="menu-option"]');
+                const texts = await Promise.all(rows.map(function (element) { return element.getText(); }));
+                const row = texts.find(function (text) {
+                    return /^\s*Skip OP\/ED\s*(On|Off)\s*$/.test(text || "");
+                });
+                if (client !== vc.getCurrentClientId()) { skipEnabled = false; return; }
+                if (row) {
+                    skipEnabled = /\bOn\s*$/.test(row);
+                } else {
+                    const editing = await ctx.dom.query('[data-vc-element="menu-submenu-body"], [data-vc-element="menu-sub-submenu-body"]');
+                    if (editing.length) skipEnabled = false;
+                }
+            } catch (_) { skipEnabled = false; }
+            if (!skipEnabled) pending = null;
+        }
+
+        async function tick() {
+            if (checking) return;
+            checking = true;
+            try {
+                await checkPlayerSetting();
+                check(vc.getPlaybackStatus());
+                refresh();
+            } finally { checking = false; }
+        }
 
         function sync() {
             const state = vc.getPlaybackState();
@@ -62,7 +96,7 @@ function init() {
 
         function check(status) {
             sync();
-            if (!active || !info || info.isNakamaWatchParty || !status || status.paused ||
+            if (!skipEnabled || !active || !info || info.isNakamaWatchParty || !status || status.paused ||
                 status.id !== info.id || status.clientId !== vc.getCurrentClientId() ||
                 !Number.isFinite(status.duration) || status.duration <= 1) return;
             const time = status.currentTime;
@@ -99,10 +133,10 @@ function init() {
             }
         }
 
-        vc.addEventListener("video-status", function () { check(vc.getPlaybackStatus()); });
+        vc.addEventListener("video-status", function () { tick(); });
         vc.addEventListener("video-loaded", function () { sync(); refresh(); });
         vc.addEventListener("video-playback-state", function () { sync(); refresh(); });
-        ctx.setInterval(function () { check(vc.getPlaybackStatus()); refresh(); }, 500);
+        ctx.setInterval(tick, 500);
         refresh();
     });
 }
