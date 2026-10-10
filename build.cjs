@@ -1,5 +1,5 @@
 const fs = require('fs');
-const version = '1.0.11';
+const version = '1.0.12';
 const releasePath = 'releases/v' + version;
 const releaseURL = 'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/' + releasePath;
 const manifest = {

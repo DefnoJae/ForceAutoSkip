@@ -32,6 +32,8 @@ Version 1.0.10 also fixes two bugs in 1.0.9: opening the Skip OP/ED submenu inco
 
 Version 1.0.11 adds an independent playback watchdog using `pullStatus`, rather than relying on cached status or menu interaction. When enabled playback remains in a detected OP/ED range and continues advancing for at least two seconds, it forces a seek to the range end. A successful native skip cancels the fallback; pause, leaving the range, episode changes, and manual seeks reset the grace period. Ignored force seeks are retried no more often than every two seconds. Menu reads run separately so an unanswered settings request cannot hold up the playback watchdog.
 
+Version 1.0.12 fixes the watchdog resetting its grace timer on repeated timestamps between Seanime's one-second status events. Duplicate samples now leave the timer running; two seconds without progress reset it to avoid skipping while stalled. An unanswered settings query retains the last confirmed On/Off preference, and a playback-status failure resets the grace period without turning the preference off. The player's observed Off selection still cancels skipping immediately. Repeated reads of an unchanged preference no longer write to storage every 500 ms.
+
 ## How it works
 
 - Prefers explicitly labelled OP/ED chapters from the actual file. Falls back to player OP/ED timing data, refreshed every five seconds. External timing data can still be incorrect for a particular release.

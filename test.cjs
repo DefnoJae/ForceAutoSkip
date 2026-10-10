@@ -15,7 +15,7 @@ function harness(storage = new Map(), initialRows = []) {
  status:{id:'episode1',clientId:'client',duration:1380,currentTime:10,paused:false},
  data:{op:{interval:{startTime:10,endTime:100}},ed:{interval:{startTime:1200,endTime:1290}}}};
  const vc = {getPlaybackState:()=>h.state,getPlaybackStatus:()=>({...h.status,currentTime:0}),
- getCurrentClientId:()=>h.state.clientId,pullStatus:async()=>({...h.status}),getSkipData:async()=>h.data,
+ getCurrentClientId:()=>h.state.clientId,pullStatus:async()=>{if(h.statusError)throw new Error('status unavailable');return {...h.status};},getSkipData:async()=>h.data,
  seekTo:time=>h.seeks.push(time),showMessage:()=>{},addEventListener:(name,fn)=>h.events[name]=fn};
  const ctx = {videoCore:vc,dom:{query:async(selector,options)=>{assert.equal(options.withOuterHTML,true);return h.hang?new Promise(()=>{}):h.rows;}},
  setInterval:fn=>{h.intervals.push(fn);return ()=>{};},setTimeout:fn=>{const t={fn,cancelled:false};h.timers.push(t);return ()=>t.cancelled=true;}};
@@ -34,6 +34,9 @@ async function flush(){for(let i=0;i<10;i++)await Promise.resolve();}
  await h.tick(500); assert.equal(h.seeks.length,1,'throttle retries');
  await h.tick(1500); assert.equal(h.seeks.length,2,'retry after two seconds');
  h.status.currentTime=100;await h.tick(500);assert.equal(h.seeks.length,2,'confirmed target stops retry');
+ h=harness(new Map([['player-auto-skip:client',true]]));await flush();await h.tick();
+ for(let i=0;i<4;i++) {if(i%2===1)h.status.currentTime+=1;await h.tick(500,false);}
+ assert.deepEqual(h.seeks,[100],'one-second status samples must not reset the 500ms watchdog');
  h=harness(new Map());await flush();await h.tick();await h.tick(3000);assert.equal(h.seeks.length,0,'unknown toggle stays inactive');
  h.rows=submenu(true);await h.setting();assert.equal(h.storage.get('player-auto-skip:client'),true);
  h.rows=[];await h.tick();await h.tick(2000);assert.deepEqual(h.seeks,[100],'submenu On remembered when closed');
@@ -56,7 +59,11 @@ async function flush(){for(let i=0;i<10;i++)await Promise.resolve();}
  const settingsRequest=h.intervals[1]();await flush();await h.tick();await h.tick(2000);
  assert.deepEqual(h.seeks,[100],'pending UI query cannot block playback watchdog');
  for(const t of h.timers)if(!t.cancelled)t.fn();await settingsRequest;
- h.hang=false;h.rows=[row(false)];await h.setting();await h.tick(3000);assert.equal(h.seeks.length,1,'polling recovers and detects Off');
+ await h.tick(2000);assert.equal(h.seeks.length,2,'settings timeout retains confirmed On and continues retries');
+ h.hang=false;h.rows=[row(false)];await h.setting();await h.tick(3000);assert.equal(h.seeks.length,2,'polling recovers and detects Off');
+ h=harness(new Map([['player-auto-skip:client',true]]));await flush();await h.tick();
+ h.statusError=true;await h.tick(500);h.statusError=false;await h.tick();await h.tick(2000);
+ assert.deepEqual(h.seeks,[100],'status failure resets grace but retains confirmed preference');
  for(const label of ['Intro','Outro','Credits','Opening scene','After credits']) {
    h=harness(new Map([['player-auto-skip:client',true]]));h.data=null;
    h.state.playbackInfo.mkvMetadata.chapters=[{start:0,text:label},{start:90,text:'Story'}];await flush();h.now+=6000;await h.tick();await h.tick(2000);assert.equal(h.seeks.length,0,label);
@@ -66,10 +73,10 @@ async function flush(){for(let i=0;i<10;i++)await Promise.resolve();}
  h=harness(new Map([['player-auto-skip:client',true]]));h.state.playbackInfo.isNakamaWatchParty=true;await flush();await h.tick();await h.tick(3000);assert.equal(h.seeks.length,0);
  h=harness(new Map([['player-auto-skip:client',true]]));h.status.id='stale';await flush();await h.tick();await h.tick(3000);assert.equal(h.seeks.length,0);
  const manifest=JSON.parse(fs.readFileSync('Manifest.json','utf8'));
- assert.equal(manifest.version,'1.0.11');assert.equal(manifest.payload,source);
+ assert.equal(manifest.version,'1.0.12');assert.equal(manifest.payload,source);
  assert.deepEqual(manifest.plugin.permissions.scopes,['playback','storage']);
  assert.equal(manifest.manifestURI,'https://raw.githubusercontent.com/DefnoJae/ForceAutoSkip/main/releases/Manifest.json');
  for(const path of ['latest.json','releases/Manifest.json',...fs.readdirSync('releases').filter(dir=>fs.statSync('releases/'+dir).isDirectory()).map(dir=>'releases/'+dir+'/Manifest.json')])
    assert.deepEqual(JSON.parse(fs.readFileSync(path,'utf8')),manifest);
- console.log('PASS: two-second grace, no-touch fallback, fresh status pull, retries, native success, remembered On/Off, restart, pause, buffering, episode changes, ending, UI query isolation, chapter guards, watch party, stale status, update aliases');
+ console.log('PASS: two-second grace, repeated one-second status samples, no-touch fallback, fresh status pull, retries, native success, remembered On/Off, restart, pause, buffering, episode changes, ending, UI timeouts, status failure recovery, chapter guards, watch party, stale status, update aliases');
 })().catch(error=>{console.error(error);process.exitCode=1;});

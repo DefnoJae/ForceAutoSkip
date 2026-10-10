@@ -1,4 +1,4 @@
-// Seanime UI plugin. Disable this extension to watch OP/ED normally.
+// Seanime UI plugin. Respects the last confirmed player Skip OP/ED setting.
 function init() {
     $ui.register(function (ctx) {
         const vc = ctx.videoCore;
@@ -21,7 +21,10 @@ function init() {
 
         function rememberSetting(client, enabled) {
             skipEnabled = enabled;
-            if (typeof $storage !== "undefined") $storage.set("player-auto-skip:" + client, enabled);
+            if (typeof $storage !== "undefined" && $storage.get("player-auto-skip:" + client) !== enabled) {
+                $storage.set("player-auto-skip:" + client, enabled);
+                console.log("[ForceAutoSkip] player Skip OP/ED confirmed " + (enabled ? "On" : "Off"));
+            }
             if (!enabled) { waiting = null; pending = null; }
         }
 
@@ -70,7 +73,10 @@ function init() {
                 if (client !== vc.getCurrentClientId()) { skipEnabled = false; return; }
                 const setting = readSettingSnapshot(rows);
                 if (setting !== null) rememberSetting(client, setting);
-            } catch (_) { skipEnabled = false; }
+            } catch (_) {
+                // Hidden controls or an unanswered DOM request do not change the preference.
+                // Only an observed On/Off selection can replace the confirmed value.
+            }
             if (!skipEnabled) pending = null;
         }
 
@@ -88,8 +94,8 @@ function init() {
                 const status = await withTimeout(vc.pullStatus());
                 check(status);
             } catch (error) {
-                skipEnabled = false;
-                console.log("[ForceAutoSkip] settings check failed: " + String(error));
+                waiting = null;
+                console.log("[ForceAutoSkip] playback status unavailable: " + String(error));
             } finally { checking = false; }
         }
 
@@ -153,14 +159,20 @@ function init() {
             const now = Date.now();
             const key = range.start + ":" + range.end + ":" + range.label;
             if (!waiting || waiting.key !== key || time < waiting.lastTime - 0.5) {
-                waiting = { key: key, since: now, firstTime: time, lastTime: time };
+                waiting = { key: key, since: now, firstTime: time, lastTime: time, lastAdvance: now };
                 return;
             }
             if (time === waiting.lastTime) {
-                if (!pending) { waiting.since = now; waiting.firstTime = time; }
+                // Seanime emits status once per second; our 500ms polls can repeat it.
+                // A repeated sample is not buffering. Reset only after sustained lack of progress.
+                if (!pending && now - waiting.lastAdvance >= 2000) {
+                    waiting.since = now;
+                    waiting.firstTime = time;
+                }
                 return;
             }
             waiting.lastTime = time;
+            waiting.lastAdvance = now;
             if (now - waiting.since < 2000 || time <= waiting.firstTime) return;
             if (pending && pending.end === range.end && now - pending.sent < 2000) return;
             // Retry a seek that the player ignored; do not flood it with commands.
